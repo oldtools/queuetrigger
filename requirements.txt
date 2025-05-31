@@ -1,0 +1,8 @@
+PySide6
+e
+pydub
+numpy
+python-vlc
+matplotlib
+scipy
+simpleaudio 
