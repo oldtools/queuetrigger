@@ -18,7 +18,7 @@ A cross-platform desktop application that listens for a specific sound cue (from
       sudo apt install python3 python3-venv python3-pip git
 		cd ~
 		git clone --recursive https://github.com/oldtools/queuetrigger.git
-		cd [RJ_PROJ]
+		cd queuetrigger
 		python3 -m venv .venv
 		source .venv/bin/activate
 		python -m pip install -r requirements.txt
@@ -33,7 +33,7 @@ A cross-platform desktop application that listens for a specific sound cue (from
 ```
 		cd %userprofile%/Downloads
 		git clone --recursive https://github.com/oldtools/queuetrigger.git
-		cd [RJ_PROJ]
+		cd queuetrigger
 		python -m pip install -r requirements.txt
 		python -m Python\main.py
 ```
