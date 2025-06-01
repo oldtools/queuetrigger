@@ -31,7 +31,7 @@ A cross-platform desktop application that listens for a specific sound cue (from
 ```
 
 ```
-		cd %userprofile%/Downloads
+		cd %userprofile%\Downloads
 		git clone --recursive https://github.com/oldtools/queuetrigger.git
 		cd queuetrigger
 		python -m pip install -r requirements.txt
