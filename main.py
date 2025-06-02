@@ -332,8 +332,16 @@ class QueueSection(QGroupBox):
         self.edit_history = []  # For undo functionality
         self.config = config
         
+        # Get the correct application directory
+        if getattr(sys, 'frozen', False):
+            # Running as compiled executable
+            app_dir = os.path.dirname(sys.executable)
+        else:
+            # Running from source
+            app_dir = os.path.dirname(os.path.abspath(__file__))
+        
         # Create cache directory if it doesn't exist
-        self.cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache")
+        self.cache_dir = os.path.join(app_dir, "cache")
         if not os.path.exists(self.cache_dir):
             os.makedirs(self.cache_dir)
             print(f"Created cache directory: {self.cache_dir}")
@@ -1139,8 +1147,18 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Audio Queue Trigger")
         self.setGeometry(100, 100, 980, 600)
         
+        # Get the correct application directory
+        # This handles both running from source and from PyInstaller executable
+        if getattr(sys, 'frozen', False):
+            # Running as compiled executable
+            app_dir = os.path.dirname(sys.executable)
+        else:
+            # Running from source
+            app_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        print(f"Application directory: {app_dir}")
+        
         # Initialize configuration
-        app_dir = os.path.dirname(os.path.abspath(__file__))
         self.config = Config(app_dir)
         print(f"MainWindow initialized with config from {app_dir}")
         

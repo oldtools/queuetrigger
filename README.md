@@ -1,6 +1,6 @@
 # Audio Queue Trigger App
 
-A cross-platform desktop application that listens for a specific sound cue (from a microphone) and triggers actions such as running a program or playing a sound. Built with Python and Qt6 (PySide6).
+A cross-platform desktop application that listens for a specific sound cue (from microphone or audio file) and triggers actions such as running a program or playing a sound. Built with Python and Qt6 (PySide6).
 
 ## Features
 - Record a sound cue from the microphone (up to 20 seconds)
@@ -18,24 +18,25 @@ A cross-platform desktop application that listens for a specific sound cue (from
       sudo apt install python3 python3-venv python3-pip git
 		cd ~
 		git clone --recursive https://github.com/oldtools/queuetrigger.git
-		cd queuetrigger
+		cd [RJ_PROJ]
 		python3 -m venv .venv
 		source .venv/bin/activate
 		python -m pip install -r requirements.txt
-		python -m main.py
+		python -m Python/main.py
    ```
 ## Windows Users
-
+### A portable executable can be found in the releases section of this project. 
+### If you wish to build and run from source:
 ```
 		winget install -e --id Python.Python.3.12 --scope machine
 ```
 
 ```
-		cd %userprofile%\Downloads
+		cd %userprofile%/Downloads
 		git clone --recursive https://github.com/oldtools/queuetrigger.git
-		cd queuetrigger
+		cd [RJ_PROJ]
 		python -m pip install -r requirements.txt
-		python -m main.py
+		python -m Python\main.py
 ```
 
 ## Apple Mac Users
