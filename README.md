@@ -22,7 +22,7 @@ A cross-platform desktop application that listens for a specific sound cue (from
 		python3 -m venv .venv
 		source .venv/bin/activate
 		python -m pip install -r requirements.txt
-		python -m Python/main.py
+		python -m main.py
    ```
 ## Windows Users
 
@@ -35,7 +35,7 @@ A cross-platform desktop application that listens for a specific sound cue (from
 		git clone --recursive https://github.com/oldtools/queuetrigger.git
 		cd queuetrigger
 		python -m pip install -r requirements.txt
-		python -m Python\main.py
+		python -m main.py
 ```
 
 ## Apple Mac Users
