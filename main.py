@@ -1,3 +1,4 @@
+
 import os
 import io
 import sys
@@ -14,6 +15,24 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QPixmap, QPainter, QColor, QImage
 import vlc
 from pydub import AudioSegment
+
+def clear_cache_directory(directory):
+    """Delete all files in the cache directory"""
+    try:
+        if os.path.exists(directory):
+            for filename in os.listdir(directory):
+                file_path = os.path.join(directory, filename)
+                if os.path.isfile(file_path):
+                    try:
+                        os.remove(file_path)
+                        print(f"Deleted cache file: {file_path}")
+                    except Exception as e:
+                        print(f"Error deleting cache file {file_path}: {str(e)}")
+            print(f"Cleared cache directory: {directory}")
+        else:
+            print(f"Cache directory does not exist: {directory}")
+    except Exception as e:
+        print(f"Error clearing cache directory: {str(e)}")
 
 class Config:
     """Configuration manager for the application"""
@@ -113,19 +132,23 @@ class WaveformLabel(QLabel):
         self.update()
     
     def mousePressEvent(self, event):
-        if self.audio_duration > 0:
-            x = event.position().x()
-            time_pos = (x / self.width()) * self.audio_duration
-            self.selection = [time_pos, time_pos]
-            self.is_selecting = True
-            self.update()
+        if self.audio_duration <= 0:
+            return
+        
+        x = event.position().x()
+        time_pos = (x / self.width()) * self.audio_duration
+        self.selection = [time_pos, time_pos]
+        self.is_selecting = True
+        self.update()
     
     def mouseMoveEvent(self, event):
-        if self.is_selecting and self.audio_duration > 0:
-            x = event.position().x()
-            time_pos = max(0, min((x / self.width()) * self.audio_duration, self.audio_duration))
-            self.selection[1] = time_pos
-            self.update()
+        if not self.is_selecting or self.audio_duration <= 0:
+            return
+        
+        x = event.position().x()
+        time_pos = max(0, min((x / self.width()) * self.audio_duration, self.audio_duration))
+        self.selection[1] = time_pos
+        self.update()
     
     def mouseReleaseEvent(self, event):
         if self.is_selecting:
@@ -155,8 +178,8 @@ class WaveformLabel(QLabel):
                 painter.setFont(font)
             painter.drawText(10, 40, f"File: {os.path.basename(self.saved_filename)}")
         
-        # Draw selection if exists
-        if self.selection:
+        # Draw selection if exists and audio duration is valid
+        if self.selection and self.audio_duration > 0:
             start_pos = int((min(self.selection) / self.audio_duration) * self.width())
             end_pos = int((max(self.selection) / self.audio_duration) * self.width())
             
@@ -525,7 +548,7 @@ class QueueSection(QGroupBox):
         if not hasattr(self, 'audio_segment') or not self.audio_path:
             self.label.setText("No audio to play")
             return
-            
+        
         try:
             if self.vlc_instance:
                 if self.vlc_player:
@@ -536,6 +559,11 @@ class QueueSection(QGroupBox):
                 self.vlc_player.set_media(media)
                 self.vlc_player.play()
                 self.label.setText(f"Playing: {os.path.basename(self.audio_path)}")
+                
+                # Start the playback timer in the main window
+                main_window = self.window()
+                if hasattr(main_window, 'playback_timer'):
+                    main_window.playback_timer.start()
         except Exception as e:
             print(f"Error playing audio: {str(e)}")
             self.label.setText(f"Error playing audio: {str(e)}")
@@ -546,6 +574,13 @@ class QueueSection(QGroupBox):
     def on_stop(self):
         if self.vlc_player:
             self.vlc_player.stop()
+        
+        # Stop the playback timer in the main window
+        main_window = self.window()
+        if hasattr(main_window, 'playback_timer'):
+            main_window.playback_timer.stop()
+            if hasattr(main_window, 'playback_time_label'):
+                main_window.playback_time_label.setText("Playback: 00:00:000 / 00:00:000")
     def on_select(self):
         # Implementation for select button
         if self.audio_path:
@@ -714,6 +749,11 @@ class QueueSection(QGroupBox):
             self.label.setText("Cannot listen: Missing audio or action configuration")
             return False
         
+        # Check if the audio file is longer than 3 seconds
+        if hasattr(self, 'audio_segment') and self.audio_segment.duration_seconds > 3:
+            self.label.setText("Cue file too long (>3s). Please trim it first.")
+            return False
+        
         # Stop any existing listener thread
         self.stop_listening()
         
@@ -764,13 +804,30 @@ class QueueSection(QGroupBox):
 
     def _update_waveform_display(self):
         if not hasattr(self, 'audio_segment'):
+            print("QueueSection: No audio segment to update waveform display")
             return
         
         try:
+            # Verify audio segment has content
+            if len(self.audio_segment) == 0:
+                print("QueueSection: Audio segment has zero duration")
+                self.label.setText("Error: Audio has zero duration")
+                return
+            
+            print(f"QueueSection: Updating waveform display for {self.audio_segment.duration_seconds:.3f}s audio")
+            
             # Convert to numpy array for plotting
             samples = np.array(self.audio_segment.get_array_of_samples())
+            print(f"QueueSection: Got samples array with shape {samples.shape}, min={samples.min() if samples.size > 0 else 'N/A'}, max={samples.max() if samples.size > 0 else 'N/A'}")
+            
+            if samples.size == 0:
+                print("QueueSection: Empty samples array, cannot generate waveform")
+                self.label.setText("Error: Audio has no samples")
+                return
+            
             if self.audio_segment.channels > 1:
                 samples = samples.reshape((-1, self.audio_segment.channels)).mean(axis=1)
+                print(f"QueueSection: Converted to mono, new shape: {samples.shape}")
             
             # Create a figure for the waveform
             plt.figure(figsize=(8, 2))
@@ -787,8 +844,18 @@ class QueueSection(QGroupBox):
             img = QImage.fromData(buf.getvalue())
             pixmap = QPixmap.fromImage(img)
             
+            if pixmap.isNull():
+                print("QueueSection: Generated pixmap is null")
+                self.label.setText("Error: Failed to generate waveform image")
+                return
+            
+            print(f"QueueSection: Generated waveform pixmap with size {pixmap.width()}x{pixmap.height()}")
+            
             # Set the pixmap to the label
             self.waveform_label.set_waveform(pixmap)
+            
+            # Update audio duration
+            self.waveform_label.set_audio_duration(self.audio_segment.duration_seconds)
             
             # Update cache filename
             self.waveform_label.set_cache_filename(self.audio_path)
@@ -798,9 +865,11 @@ class QueueSection(QGroupBox):
             self.pause_btn.setEnabled(True)
             self.stop_btn.setEnabled(True)
             self.paste_btn.setEnabled(hasattr(self, 'copied_segment'))
-            
+        
         except Exception as e:
-            print(f"Error updating waveform display: {str(e)}")
+            print(f"QueueSection: Error updating waveform display: {str(e)}")
+            import traceback
+            traceback.print_exc()
             self.label.setText(f"Error displaying waveform: {str(e)}")
 
     def _save_state_for_undo(self):
@@ -849,19 +918,67 @@ class QueueSection(QGroupBox):
 
     def on_crop(self):
         if self.audio_path and self.selection:
-            print(f"Cropping to selection: {self.selection}")
+            print(f"QueueSection: Cropping to selection: {self.selection}")
             self._save_state_for_undo()
-            start_sec, end_sec = self.selection
-            # Keep only the selected portion
-            self.audio_segment = self.audio_segment[start_sec*1000:end_sec*1000]
             
-            # Save modified audio
-            self.audio_segment.export(self.audio_path, format="wav")
-            print(f"Saved cropped audio to: {self.audio_path}")
-            
-            self._update_waveform_display()
-            self.label.setText(f"Cropped to {end_sec-start_sec:.2f}s segment")
-            self.selection = None
+            try:
+                start_sec, end_sec = self.selection
+                
+                # Validate selection
+                if start_sec >= end_sec:
+                    print(f"QueueSection: Invalid selection (start >= end): {start_sec:.3f}s to {end_sec:.3f}s")
+                    self.label.setText("Invalid selection (start >= end)")
+                    return
+                    
+                # Get audio duration for validation
+                total_duration = self.audio_segment.duration_seconds
+                print(f"QueueSection: Audio duration before crop: {total_duration:.3f}s")
+                
+                # Validate selection bounds
+                if start_sec < 0 or end_sec > total_duration:
+                    print(f"QueueSection: Selection out of bounds: {start_sec:.3f}s to {end_sec:.3f}s (total: {total_duration:.3f}s)")
+                    # Clamp values
+                    start_sec = max(0, min(start_sec, total_duration))
+                    end_sec = max(start_sec, min(end_sec, total_duration))
+                    print(f"QueueSection: Clamped selection to: {start_sec:.3f}s to {end_sec:.3f}s")
+                
+                # Keep only the selected portion
+                print(f"QueueSection: Cropping from {start_sec*1000:.0f}ms to {end_sec*1000:.0f}ms")
+                cropped_segment = self.audio_segment[int(start_sec*1000):int(end_sec*1000)]
+                
+                # Verify cropped segment
+                if len(cropped_segment) == 0:
+                    print(f"QueueSection: Cropped segment has zero duration")
+                    self.label.setText("Error: Cropped segment has zero duration")
+                    return
+                    
+                print(f"QueueSection: Cropped segment duration: {cropped_segment.duration_seconds:.3f}s")
+                
+                # Replace the audio segment with the cropped version
+                self.audio_segment = cropped_segment
+                
+                # Save modified audio
+                self.audio_segment.export(self.audio_path, format="wav")
+                print(f"QueueSection: Saved cropped audio to: {self.audio_path}")
+                
+                # Verify saved file
+                if not os.path.exists(self.audio_path) or os.path.getsize(self.audio_path) == 0:
+                    print(f"QueueSection: Saved file is empty or missing: {self.audio_path}")
+                    self.label.setText("Error: Failed to save cropped audio")
+                    return
+                
+                # Update waveform display
+                self._update_waveform_display()
+                self.label.setText(f"Cropped to {end_sec-start_sec:.2f}s segment")
+                
+                # Reset selection
+                self.selection = None
+                
+            except Exception as e:
+                print(f"QueueSection: Error during crop: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                self.label.setText(f"Error during crop: {str(e)}")
 
     def on_record(self):
         if self.recording:
@@ -1027,6 +1144,10 @@ class MainWindow(QMainWindow):
         self.config = Config(app_dir)
         print(f"MainWindow initialized with config from {app_dir}")
         
+        # Clear cache directory
+        cache_dir = os.path.join(app_dir, "cache")
+        clear_cache_directory(cache_dir)
+        
         # Initialize VLC with options to suppress warnings
         vlc_args = ['--quiet', '--no-xlib']
         self.vlc_instance = vlc.Instance(vlc_args)
@@ -1074,6 +1195,16 @@ class MainWindow(QMainWindow):
         scroll.setWidgetResizable(True)
         self.setCentralWidget(scroll)
         
+        # Create status bar for playback time
+        self.statusBar = self.statusBar()
+        self.playback_time_label = QLabel("Playback: 0:00 / 0:00")
+        self.statusBar.addPermanentWidget(self.playback_time_label)
+        
+        # Create timer to update playback time
+        self.playback_timer = QTimer(self)
+        self.playback_timer.setInterval(100)  # Update every 100ms
+        self.playback_timer.timeout.connect(self.update_playback_time)
+        
         # Connect signals
         for i, section in enumerate(self.queue_sections):
             section.toggled.connect(lambda checked, idx=i: self.on_section_toggled(idx, checked))
@@ -1093,16 +1224,71 @@ class MainWindow(QMainWindow):
         self.stop_listen_btn.setEnabled(True)
         self.label.setText("Listening for all enabled cues...")
         
+        # Check for active queue sections
+        active_section = None
+        for section in self.queue_sections:
+            if section.isChecked():
+                active_section = section
+                break
+        
+        if active_section:
+            # Check if there are any undo files in the cache directory
+            app_dir = os.path.dirname(os.path.abspath(__file__))
+            cache_dir = os.path.join(app_dir, "cache")
+            has_undo_files = False
+            
+            if os.path.exists(cache_dir):
+                for filename in os.listdir(cache_dir):
+                    if filename.startswith("undo_") and filename.endswith(".wav"):
+                        has_undo_files = True
+                        break
+            
+            # If there are undo files and we have an audio segment, save it to the app root
+            if has_undo_files and hasattr(active_section, 'audio_segment'):
+                # Create filename in app root
+                queue_file = os.path.join(app_dir, f"current_queue_{active_section.idx}.wav")
+                
+                try:
+                    # Export the audio segment
+                    active_section.audio_segment.export(queue_file, format="wav")
+                    print(f"Saved current queue to: {queue_file}")
+                    
+                    # Update the saved path in the section
+                    active_section.saved_path = queue_file
+                    active_section.waveform_label.set_saved_filename(queue_file)
+                    
+                    # Update configuration
+                    if active_section.config:
+                        active_section.config.update_queue(active_section.idx, {
+                            "saved_path": queue_file
+                        })
+                        print(f"Updated config with saved_path: {queue_file}")
+                    
+                    self.playback_time_label.setText(f"Saved current queue to: {os.path.basename(queue_file)}")
+                except Exception as e:
+                    print(f"Error saving current queue: {str(e)}")
+                    self.playback_time_label.setText(f"Error saving current queue: {str(e)}")
+        
         # Start listening for all checked queue sections
         listening_started = False
         for section in self.queue_sections:
             if section.isChecked():
+                # Check if the audio file is longer than 3 seconds
+                if hasattr(section, 'audio_segment') and section.audio_segment.duration_seconds > 3:
+                    self.playback_time_label.setText("Warning: Cue file is longer than 3 seconds. Listening stopped.")
+                    self.label.setText("Cue file too long (>3s). Please trim it first.")
+                    self.listening = False
+                    self.listen_btn.setEnabled(True)
+                    self.stop_listen_btn.setEnabled(False)
+                    return
+                
                 if section.start_listening(self.on_any_cue_detected):
                     listening_started = True
                     print(f"Started listening for Queue {section.idx+1}")
-        
+    
         if not listening_started:
             self.label.setText("No valid cues to listen for. Please configure at least one queue.")
+            self.playback_time_label.setText("No valid cues configured. Listening stopped.")
             self.listening = False
             self.listen_btn.setEnabled(True)
             self.stop_listen_btn.setEnabled(False)
@@ -1130,6 +1316,43 @@ class MainWindow(QMainWindow):
         # Resume listening after a short delay if still in listening mode
         if self.listening:
             QTimer.singleShot(2000, self.on_start_listening)
+
+    def update_playback_time(self):
+        # Find the active queue section
+        active_section = None
+        for section in self.queue_sections:
+            if section.isChecked() and hasattr(section, 'vlc_player') and section.vlc_player:
+                active_section = section
+                break
+        
+        if active_section and active_section.vlc_player:
+            # Get current time and duration in milliseconds
+            current_time = active_section.vlc_player.get_time()  # in milliseconds
+            duration = active_section.vlc_player.get_length()    # in milliseconds
+            
+            if current_time >= 0 and duration > 0:
+                # Format current time as MM:SS:ms
+                current_min = int(current_time / 60000)
+                current_sec = int((current_time % 60000) / 1000)
+                current_ms = int(current_time % 1000)
+                
+                # Format duration as MM:SS:ms
+                duration_min = int(duration / 60000)
+                duration_sec = int((duration % 60000) / 1000)
+                duration_ms = int(duration % 1000)
+                
+                # Update status bar with millisecond precision
+                self.playback_time_label.setText(
+                    f"Playback: {current_min:02d}:{current_sec:02d}:{current_ms:03d} / {duration_min:02d}:{duration_sec:02d}:{duration_ms:03d}"
+                )
+                
+                # If we're at the end, stop the timer
+                if current_time >= duration:
+                    self.playback_timer.stop()
+            else:
+                self.playback_time_label.setText("Playback: 00:00:000 / 00:00:000")
+        else:
+            self.playback_time_label.setText("Playback: 00:00:000 / 00:00:000")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
