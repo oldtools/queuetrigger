@@ -1,6 +1,6 @@
 # Audio Queue Trigger App
 
-A cross-platform desktop application that listens for a specific sound cue (from microphone or audio file) and triggers actions such as running a program or playing a sound. Built with Python and Qt6 (PySide6).
+A cross-platform desktop application that listens for a specific sound cue (from a microphone) and triggers actions such as running a program or playing a sound. Built with Python and Qt6 (PySide6).
 
 ## Features
 - Record a sound cue from the microphone (up to 20 seconds)
